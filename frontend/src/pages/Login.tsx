@@ -1,17 +1,27 @@
-import React, { useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import { motion } from 'framer-motion';
 import Button from '../components/common/Button';
 import Input from '../components/common/Input';
 import { ThemeContext } from '../context/ThemeContext';
 import { Link, useNavigate } from 'react-router-dom';
+import { login } from '../utils/api';
 
 const Login: React.FC = () => {
   const { isDarkMode, toggleTheme } = useContext(ThemeContext);
   const navigate = useNavigate();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
 
-  const handleLogin = () => {
-    alert('Đăng nhập thành công! Chào mừng đến với Boxchat-App.');
-    navigate('/chat/room1');
+  const handleLogin = async () => {
+    try {
+      const response = await login({ email, password });
+      localStorage.setItem('token', response.data.token);
+      localStorage.setItem('user', JSON.stringify(response.data.user));
+      navigate('/chat/room1');
+    } catch (error) {
+      setError(error.response?.data?.message || 'Đăng nhập thất bại');
+    }
   };
 
   return (
@@ -30,8 +40,21 @@ const Login: React.FC = () => {
         >
           Chào mừng đến với Boxchat-App
         </motion.h2>
-        <Input label="Email" type="email" placeholder="Nhập email của bạn" />
-        <Input label="Mật khẩu" type="password" placeholder="Nhập mật khẩu của bạn" />
+        {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
+        <Input
+          label="Email"
+          type="email"
+          placeholder="Nhập email của bạn"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+        />
+        <Input
+          label="Mật khẩu"
+          type="password"
+          placeholder="Nhập mật khẩu của bạn"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
         <Button variant="primary" className="w-full mt-4" onClick={handleLogin}>
           Đăng nhập
         </Button>

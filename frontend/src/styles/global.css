@@ -6,17 +6,95 @@
 }
 
 body {
-    background-color: #a7b4f6;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background-size: 200% 200%;
-  animation: gradient-x 15s ease infinite;
-  background-image: linear-gradient(to right, #a7b4f6, #d946ef); /* Áp dụng gradient nhạt hơn */
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  color: #4ade80; /* Chữ xanh lá cây */
+  background: linear-gradient(to right, #0a0a0a 50%, #0f3057 50%); /* Nửa trái đen, nửa phải xanh nước biển */
 }
 
+/* Font hiện đại cho tiêu đề */
+@font-face {
+  font-family: 'Inter';
+  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+}
+
+.font-display {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+}
+
+/* Dark mode */
 .dark body {
-  background-image: linear-gradient(to right, #2a1a5e, #6b127c); /* Gradient tối, ánh tím */
+  background: linear-gradient(to right, #000000 50%, #00334d 50%); /* Dark mode: đen sâu hơn + xanh biển đậm hơn */
+  color: #4ade80;
 }
 
+/* Khung đăng nhập */
+.bg-dark-frame {
+  background: linear-gradient(145deg, #2a2a2a, #1f1f1f); /* Gradient nhẹ cho khung */
+}
+
+/* Nền cho ô nhập */
+.bg-dark-input {
+  background: linear-gradient(145deg, #2a2a2a, #222222); /* Gradient nhẹ cho ô nhập */
+}
+
+/* Hover cho ô nhập */
+.hover\:bg-dark-input-hover:hover {
+  background: linear-gradient(145deg, #333333, #2a2a2a); /* Nền sáng hơn khi hover */
+}
+
+/* Viền xanh cho khung và ô nhập */
+.border-green-500 {
+  border-color: #4ade80;
+}
+
+/* Nút đăng nhập */
+.bg-green-500 {
+  background-color: #4ade80;
+}
+
+.hover\:bg-green-600:hover {
+  background-color: #3ab56d;
+}
+
+.border-green-400 {
+  border-color: #4ade80;
+}
+
+.hover\:border-green-300:hover {
+  border-color: #68d391;
+}
+
+/* Màu chữ và placeholder */
+.text-green-400 {
+  color: #4ade80;
+}
+
+.placeholder-green-600::placeholder {
+  color: #2f855a;
+}
+
+.hover\:text-green-300:hover {
+  color: #68d391;
+}
+
+/* Hiệu ứng focus cho ô nhập */
+.focus\:ring-2:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #4ade80;
+}
+
+.focus\:ring-green-400:focus {
+  box-shadow: 0 0 0 2px #4ade80, 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+/* Hiệu ứng bóng neon */
+.shadow-neon {
+  box-shadow: 0 0 10px rgba(74, 222, 128, 0.5), 0 0 20px rgba(74, 222, 128, 0.3);
+}
+
+/* Hiệu ứng fade-in */
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -28,6 +106,7 @@ body {
   }
 }
 
+/* Hiệu ứng scale */
 @keyframes scale-up {
   from {
     transform: scale(0.95);
@@ -37,6 +116,7 @@ body {
   }
 }
 
+/* Hiệu ứng ánh sáng xanh chạy ngang */
 @keyframes gradient-x {
   0%, 100% {
     background-position: 0% 50%;
@@ -46,11 +126,31 @@ body {
   }
 }
 
+/* Hiệu ứng nhấp nháy */
 @keyframes pulse {
   0%, 100% {
     opacity: 1;
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.7;
   }
+}
+
+/* Áp dụng animation */
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out;
+}
+
+.animate-scale-up {
+  animation: scale-up 0.5s ease-out;
+}
+
+.animate-gradient-x {
+  background: linear-gradient(90deg, #4ade80, #2f855a, #4ade80);
+  background-size: 200% 100%;
+  animation: gradient-x 3s ease infinite;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
 }

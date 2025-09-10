@@ -14,7 +14,9 @@ interface MessageProps {
 }
 
 const Message: React.FC<MessageProps> = ({ message }) => {
-  const isOwnMessage = message.sender === 'me';
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const isOwnMessage = message.sender === user.user_id;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -23,11 +25,11 @@ const Message: React.FC<MessageProps> = ({ message }) => {
       className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'} mb-4`}
     >
       <div
-        className={`max-w-xs p-3 rounded-lg ${
+        className={`max-w-xs p-3 rounded-lg shadow-neon ${
           isOwnMessage
-            ? 'bg-messageOwn text-white'
-            : 'bg-messageOther dark:bg-messageOtherDark text-gray-900 dark:text-white'
-        } shadow-neon`}
+            ? 'bg-primary text-white'
+            : 'bg-gray-200 dark:bg-[#374151] text-gray-900 dark:text-white'
+        }`}
       >
         {message.type === 'text' && <p>{message.content}</p>}
         {message.type === 'sticker' && <span className="text-2xl">{message.content}</span>}

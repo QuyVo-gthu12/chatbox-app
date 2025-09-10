@@ -5,18 +5,18 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: "#7c3aed", // Violet đậm hơn, ánh tím nhẹ
-        secondary: "#d946ef", // Fuchsia nhạt hơn
-        messageOwn: "#4f46e5", // Blue for own messages
-        messageOther: "#eeeeeeff", // Gray for others' messages (light mode)
-        messageOtherDark: "#374151", // Darker gray for others' messages (dark mode)
+        primary: "#7c3aed",
+        secondary: "#d946ef",
+        messageOwn: "#4f46e5",
+        messageOther: "#eeeeeeff",
+        messageOtherDark: "#374151",
       },
       backgroundImage: {
-        background: "linear-gradient(to right, #c1cbffff, #d946ef)", // Gradient tím-hồng nhạt hơn
-        "dark-background": "linear-gradient(to right, #2a1a5e, #6b127c)", // Gradient tối hơn, ánh tím
+        background: "linear-gradient(to right, #000000, #002307)", // ✅ Gradient đen → xanh biển đậm
+        "dark-background": "linear-gradient(to right, #000000, #002307)", // ✅ dark cũng giống nhau
       },
       boxShadow: {
-        neon: "0 0 10px rgba(124, 58, 237, 0.5), 0 0 20px rgba(217, 70, 239, 0.5)", // Neon tím
+        neon: "0 0 10px rgba(124, 58, 237, 0.5), 0 0 20px rgba(217, 70, 239, 0.5)",
       },
       animation: {
         "gradient-x": "gradient-x 15s ease infinite",
