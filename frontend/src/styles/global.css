@@ -15,7 +15,7 @@ body {
 /* Font hiện đại cho tiêu đề */
 @font-face {
   font-family: 'Inter';
-  src: url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+  src: url('https://fonts.bunny.net/css?family=inter:400,600,700');
 }
 
 .font-display {

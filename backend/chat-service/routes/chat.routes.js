@@ -1,72 +1,111 @@
-const express = require('express');
-const router = express.Router();
-const jwt = require('jsonwebtoken');
+const axios = require('axios');
 const { saveMessage, getMessages } = require('../models/message.model');
-const multer = require('multer');
-const path = require('path');
+const { addUserToRoom, checkUserInRoom } = require('../models/roomParticipants.model');
 
-// Cấu hình multer để upload file
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, 'uploads/');
-  },
-  filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
-  },
-});
-const upload = multer({ storage });
+const USER_API_URL = process.env.USER_API_URL || 'http://localhost:3001';
 
-// Middleware xác thực JWT
-const authenticate = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ message: 'Thiếu token' });
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded;
-    next();
-  } catch (err) {
-    res.status(401).json({ message: 'Token không hợp lệ' });
-  }
-};
-
-router.post('/send', authenticate, async (req, res) => {
-  const { roomId, sender, content, type } = req.body;
-  if (!roomId || !sender || !content || !type) {
-    return res.status(400).json({ message: 'Thiếu thông tin' });
-  }
-  try {
-    await saveMessage(roomId, sender, content, type);
-    res.status(200).json({ message: 'Tin nhắn đã gửi' });
-  } catch (error) {
-    console.error('Error saving message:', error);
-    res.status(500).json({ message: 'Lỗi lưu tin nhắn' });
-  }
-});
-
-router.get('/:roomId', authenticate, async (req, res) => {
-  const { roomId } = req.params;
-  const limit = parseInt(req.query.limit) || 50;
-  const beforeTimestamp = req.query.before ? new Date(req.query.before) : null;
-  try {
-    const messages = await getMessages(roomId, limit, beforeTimestamp);
-    res.status(200).json({ messages });
-  } catch (error) {
-    console.error('Error fetching messages:', error);
-    res.status(500).json({ message: 'Lỗi lấy tin nhắn' });
-  }
-});
-
-router.post('/upload', authenticate, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'Không có file được tải lên' });
+module.exports = (io) => {
+  // Middleware xác thực token khi kết nối socket
+  io.use(async (socket, next) => {
+    const token = socket.handshake.auth.token;
+    if (!token) {
+      console.error('No token provided for socket:', socket.id);
+      return next(new Error('Authentication error'));
     }
-    const fileUrl = `${process.env.BACKEND_URL || 'http://localhost:3000'}/uploads/${req.file.filename}`;
-    res.status(200).json({ fileUrl });
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    res.status(500).json({ message: 'Lỗi tải file' });
-  }
-});
+    try {
+      const response = await axios.get(`${USER_API_URL}/users/validate`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      socket.user = response.data.user;
+      next();
+    } catch (err) {
+      console.error('Authentication error:', err.message);
+      return next(new Error('Authentication error'));
+    }
+  });
 
-module.exports = router;
+  io.on('connection', (socket) => {
+    console.log('✅ User connected:', socket.id, 'User ID:', socket.user.user_id);
+
+    // Join room
+    socket.on('joinRoom', async (roomId) => {
+      if (!roomId || !roomId.startsWith('room_')) {
+        console.error(`Invalid roomId: ${roomId}`);
+        socket.emit('error', { message: 'Invalid room ID' });
+        return;
+      }
+      try {
+        // ✅ Thêm user vào bảng room_participants
+        await addUserToRoom(roomId, socket.user.user_id);
+
+        const messages = await getMessages(roomId);
+        socket.join(roomId);
+
+        console.log(`✅ User ${socket.user.user_id} joined room ${roomId}`);
+        socket.emit('roomJoined', { roomId, messages });
+      } catch (error) {
+        console.error('Error joining room:', error.message);
+        socket.emit('error', { message: 'Cannot join room' });
+      }
+    });
+
+    // Gửi tin nhắn
+    socket.on('sendMessage', async (data) => {
+      try {
+        const { roomId, content, type } = data;
+        if (!roomId || !roomId.startsWith('room_') || !content || !type) {
+          console.error('Invalid message data:', data);
+          socket.emit('error', { message: 'Invalid message data' });
+          return;
+        }
+
+        // ✅ Kiểm tra quyền trong room_participants
+        const hasAccess = await checkUserInRoom(roomId, socket.user.user_id);
+        if (!hasAccess) {
+          console.error(`Access denied for room: ${roomId}, user: ${socket.user.user_id}`);
+          socket.emit('error', { message: 'You do not have access to this room' });
+          return;
+        }
+
+        // Lưu tin nhắn
+        const message = await saveMessage(
+          roomId,
+          socket.user.user_id,
+          content,
+          type
+        );
+
+        // Phát lại tin nhắn tới tất cả client trong room
+        io.to(roomId).emit('message', {
+          ...message,
+          senderName: socket.user.name, // Thêm tên hiển thị
+        });
+
+        console.log(`✅ Message sent to room ${roomId}:`, message);
+      } catch (error) {
+        console.error('Error sending message:', error.message);
+        socket.emit('error', { message: 'Cannot send message' });
+      }
+    });
+
+    // Trạng thái typing
+    socket.on('typing', (data) => {
+      const { roomId, isTyping } = data;
+      if (roomId && roomId.startsWith('room_')) {
+        socket.to(roomId).emit('typing', {
+          roomId,
+          isTyping,
+          userId: socket.user.user_id,
+          userName: socket.user.name,
+        });
+        console.log(
+          `✅ User ${socket.user.user_id} (${socket.user.name}) is ${isTyping ? 'typing' : 'not typing'} in room ${roomId}`
+        );
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log('❌ User disconnected:', socket.id, 'User ID:', socket.user.user_id);
+    });
+  });
+};

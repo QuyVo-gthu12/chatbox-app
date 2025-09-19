@@ -4,8 +4,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const path = require('path');
-const chatRoutes = require('./routes/chat.routes');
-const chatGateway = require('./gateways/chat.gateway');
+const setupChatRoutes = require('./routes/chat.routes');
+const chatHttpRoutes = require('./routes/chat.http.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -18,11 +18,11 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use('/chats', chatRoutes);
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, 'Uploads')));
+app.use('/chats', chatHttpRoutes); // Thêm router HTTP
 
-// Khởi động WebSocket Gateway
-chatGateway(io);
+// Khởi động WebSocket
+setupChatRoutes(io);
 
 // Kết nối Cassandra
 require('./utils/database');

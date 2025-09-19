@@ -16,11 +16,17 @@ const Login: React.FC = () => {
   const handleLogin = async () => {
     try {
       const response = await login({ email, password });
-      localStorage.setItem('token', response.data.token);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      navigate('/chat/room1');
-    } catch (error) {
-      setError(error.response?.data?.message || 'Đăng nhập thất bại');
+      if (response.data.token && response.data.user) {
+        localStorage.setItem('token', response.data.token);
+        localStorage.setItem('user', JSON.stringify(response.data.user));
+        navigate('/home');
+      } else {
+        setError('Dữ liệu trả về không hợp lệ. Vui lòng thử lại.');
+      }
+    } catch (error: any) {
+      setError(
+        error.response?.data?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra email hoặc mật khẩu.'
+      );
     }
   };
 
@@ -58,7 +64,10 @@ const Login: React.FC = () => {
         <Button variant="primary" className="w-full mt-4" onClick={handleLogin}>
           Đăng nhập
         </Button>
-        <Link to="/register" className="mt-4 text-sm text-primary hover:underline transition-colors duration-200 w-full text-center block">
+        <Link
+          to="/register"
+          className="mt-4 text-sm text-primary hover:underline transition-colors duration-200 w-full text-center block"
+        >
           Chưa có tài khoản? Đăng ký
         </Link>
         <button

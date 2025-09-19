@@ -1,9 +1,10 @@
+// App.tsx
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
-import ChatRoom from './pages/ChatRoom';
+import Home from './pages/Home'; // Import Home component
 import './styles/tailwind.css';
 
 const App: React.FC = () => {
@@ -14,7 +15,7 @@ const App: React.FC = () => {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/chat/:roomId" element={<ChatRoom />} />
+            <Route path="/home/*" element={<Home />} />
             <Route path="/" element={<Login />} />
           </Routes>
         </div>
