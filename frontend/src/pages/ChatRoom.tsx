@@ -77,19 +77,20 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
           console.log(`Fetching messages for room: ${roomId}`);
           const response = await getMessages(roomId);
           setMessages(
-            response.data.messages.map((msg: any) => ({
-              id: msg.id,
-              sender: msg.sender,
-              senderName: msg.senderName || msg.sender,
-              content: msg.content,
-              timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
-              type: msg.type,
-              roomId,
-            }))
-            .reverse()
+            response.data.messages
+              .map((msg: any) => ({
+                id: msg.id,
+                sender: msg.sender,
+                senderName: msg.senderName || msg.sender,
+                content: msg.content,
+                timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+                type: msg.type,
+                roomId,
+              }))
+              .reverse()
           );
           setError(null);
         } catch (error: any) {
@@ -101,7 +102,11 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
             localStorage.removeItem("token");
             navigate("/login");
           } else {
-            setError(`Không thể tải tin nhắn: ${error.response?.data?.error || error.message}`);
+            setError(
+              `Không thể tải tin nhắn: ${
+                error.response?.data?.error || error.message
+              }`
+            );
           }
         }
       }
@@ -171,7 +176,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Gửi tin nhắn
+  // Gửi tin nhắn text/sticker
   const handleSendMessage = (
     content: string,
     type: "text" | "image" | "file" | "sticker"
@@ -182,7 +187,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     }
 
     const newMessage: MessageType = {
-      id: Date.now().toString(), // Tạm thời, vì WebSocket không cần UUID chính xác
+      id: Date.now().toString(),
       sender: user.user_id,
       senderName: user.name,
       content,
@@ -194,6 +199,50 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       roomId,
     };
     sendMessage(newMessage);
+  };
+
+  // ✅ Gửi file/ảnh
+  const handleSendFile = async (file: File, type: "image" | "file") => {
+    if (!roomId?.startsWith("room_")) return;
+
+    const formData = new FormData();
+    formData.append("roomId", roomId);
+    formData.append("type", type);
+    formData.append("file", file);
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("http://localhost:3002/media/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      console.log("Uploaded file:", data);
+
+      const newMessage: MessageType = {
+        id: Date.now().toString(),
+        sender: user.user_id,
+        senderName: user.name,
+        content: data.fileUrl, // link ảnh/file
+        timestamp: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+        type,
+        roomId,
+    };
+
+    sendMessage(newMessage);
+
+    } catch (err) {
+      console.error("Upload error:", err);
+      setError("Không thể gửi file");
+    }
   };
 
   // Emit typing
@@ -214,7 +263,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       >
         <div className="flex items-center">
           <img
-            src={chats.find((c) => c.id === roomId)?.avatar || "/default-avatar.png"}
+            src={
+              chats.find((c) => c.id === roomId)?.avatar || "/default-avatar.png"
+            }
             alt={chats.find((c) => c.id === roomId)?.name || "Chat"}
             className="w-10 h-10 rounded-full"
             onError={(e) => {
@@ -258,7 +309,12 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       </div>
 
       {/* Input */}
-      <MessageInput onSend={handleSendMessage} onTyping={handleTyping} />
+      <MessageInput
+        onSend={handleSendMessage}
+        onTyping={handleTyping}
+        onSendFile={handleSendFile}   // ✅ truyền xuống cho MessageInput
+      />
+
     </div>
   );
 };

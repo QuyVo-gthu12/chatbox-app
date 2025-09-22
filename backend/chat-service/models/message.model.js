@@ -1,24 +1,53 @@
 const client = require('../utils/database');
 const cassandra = require('cassandra-driver');
+const axios = require('axios');
+const FormData = require('form-data');
+const fs = require('fs');
 
-const saveMessage = async (roomId, sender, content, type) => {
-  const id = cassandra.types.TimeUuid.now(); // timeuuid đúng schema
+/**
+ * ✅ Lưu tin nhắn
+ * Nếu type = image/file → upload qua media-service trước
+ */
+const saveMessage = async (roomId, sender, content, type, filePath = null) => {
+  const id = cassandra.types.TimeUuid.now();
   const timestamp = new Date();
+  let finalContent = content;
+
+  // 👉 Nếu có file (image/file) thì upload sang media-service
+  if ((type === 'image' || type === 'file') && filePath) {
+    try {
+      const form = new FormData();
+      form.append('file', fs.createReadStream(filePath));
+
+      const response = await axios.post(
+        'http://localhost:3002/media/upload',
+        form,
+        { headers: form.getHeaders() }
+      );
+
+      finalContent = response.data.url; // URL file được lưu từ media-service
+    } catch (err) {
+      console.error('❌ Upload media failed:', err.message);
+      throw new Error('Upload media failed');
+    }
+  }
+
   const query = `
     INSERT INTO chatbox.messages (room_id, timestamp, id, sender, content, type)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
-  const params = [roomId, timestamp, id, sender, content, type];
+  const params = [roomId, timestamp, id, sender, finalContent, type];
 
   try {
-    console.log(`Saving message to room: ${roomId}, sender: ${sender}, type: ${type}`);
+    console.log(`Saving message: room=${roomId}, sender=${sender}, type=${type}`);
     await client.execute(query, params, { prepare: true });
     console.log(`Message saved: ${id}`);
+
     return {
       id: id.toString(),
       roomId,
       sender,
-      content,
+      content: finalContent,
       type,
       timestamp: timestamp.toISOString()
     };
@@ -28,6 +57,9 @@ const saveMessage = async (roomId, sender, content, type) => {
   }
 };
 
+/**
+ * ✅ Lấy danh sách tin nhắn
+ */
 const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
   let query = `
     SELECT id, room_id, sender, content, type, timestamp
@@ -36,7 +68,6 @@ const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
   `;
   const params = [roomId];
 
-  // ✅ Kiểm tra beforeTimestamp có hợp lệ không
   if (beforeTimestamp) {
     const parsedDate = beforeTimestamp instanceof Date
       ? beforeTimestamp
@@ -56,6 +87,7 @@ const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
     console.log(`Executing query: ${query}, params: ${JSON.stringify(params)}`);
     const result = await client.execute(query, params, { prepare: true });
     console.log(`Fetched ${result.rows.length} messages for room: ${roomId}`);
+
     return result.rows.map(row => ({
       id: row.id.toString(),
       roomId: row.room_id,
@@ -70,16 +102,12 @@ const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
   }
 };
 
-
 /**
  * ✅ Kiểm tra quyền truy cập phòng chat
- * Tạm thời cho phép tất cả user vào mọi phòng
- * Sau này có thể query từ bảng rooms hoặc bảng users_in_rooms
  */
 const checkRoomAccess = async (roomId, userId) => {
   console.log(`checkRoomAccess: user=${userId}, room=${roomId}`);
-  // TODO: sau này kiểm tra thật bằng DB
-  return true;
+  return true; // TODO: sau này check từ room_participants
 };
 
 module.exports = { saveMessage, getMessages, checkRoomAccess };
