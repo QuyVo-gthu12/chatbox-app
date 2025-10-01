@@ -1,0 +1,53 @@
+
+services:
+  user-service:
+    build: ./backend/user-service
+    container_name: chatbox-app-user-service
+    env_file:
+      - ./backend/user-service/.env
+    depends_on:
+      - db
+    command: ["sh", "./wait-for-db.sh", "node", "server.js"]
+    ports:
+      - "3001:3001"
+    working_dir: /usr/src/app
+    volumes:
+      - ./backend/user-service:/usr/src/app
+
+  chat-service:
+    build: ./backend/chat-service
+    container_name: chatbox-app-chat-service
+    env_file:
+      - ./backend/chat-service/.env
+    depends_on:
+      - cassandra
+      - user-service   # vì chat-service có gọi user-service API
+    ports:
+      - "3000:3000"
+    working_dir: /usr/src/app
+    volumes:
+      - ./backend/chat-service:/usr/src/app
+    command: ["sh", "wait-for-cassandra.sh", "node", "server.js"]
+
+  db:
+    image: postgres:16-alpine
+    container_name: user-db
+    env_file:
+      - ./backend/user-service/.env
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra-db
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+
+volumes:
+  user-db-data:
+  cassandra-data:
+

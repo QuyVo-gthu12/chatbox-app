@@ -1,4 +1,3 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const { Pool } = require('pg');
@@ -11,14 +10,28 @@ app.use(express.json());
 // ----------------- Kết nối PostgreSQL -----------------
 const pool = new Pool({
   host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
+  port: parseInt(process.env.DB_PORT, 10), // ✅ ép kiểu từ string sang number
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 });
 
-// Đặt pool vào global để các file routes/models dùng được
 global.pool = pool;
+
+// ----------------- Hàm chờ DB sẵn sàng -----------------
+async function waitForDB(retries = 10, delay = 3000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await pool.query('SELECT 1');
+      console.log('✅ PostgreSQL is ready!');
+      return;
+    } catch (err) {
+      console.log(`⏳ Waiting for PostgreSQL... (${i + 1}/${retries})`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw new Error('❌ PostgreSQL not ready after retries');
+}
 
 // ----------------- Tạo bảng -----------------
 async function initTables() {
@@ -50,14 +63,25 @@ async function initTables() {
     console.error('❌ Error creating tables:', err);
   }
 }
-initTables();
 
-// ----------------- Import routes -----------------
-const usersRouter = require('./routes/user.routes');
-app.use('/users', usersRouter);
+// ----------------- Khởi động server -----------------
+async function startServer() {
+  try {
+    await waitForDB();      // Chờ DB
+    await initTables();     // Tạo bảng nếu chưa có
 
-// ----------------- Server listen -----------------
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 User service running on port ${PORT}`);
-});
+    // Import routes sau khi DB sẵn sàng
+    const usersRouter = require('./routes/user.routes');
+    app.use('/users', usersRouter);
+
+    const PORT = process.env.PORT || 3001;
+    app.listen(PORT, () => {
+      console.log(`🚀 User service running on port ${PORT}`);
+    });
+  } catch (err) {
+    console.error(err);
+    process.exit(1);
+  }
+}
+
+startServer();
