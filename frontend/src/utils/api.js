@@ -42,7 +42,7 @@ export const getRooms = () => chatApi.get("/chats/rooms");
 export const createRoom = (participants) =>
   chatApi.post("/chats/room", { participants });
 
-// Lấy tin nhắn trong phòng
+
 // Lấy tin nhắn trong phòng
 export const getMessages = (roomId, limit = 50, before = null) => {
   const params = { limit };

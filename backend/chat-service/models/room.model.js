@@ -1,51 +1,69 @@
-const client = require('../utils/database');
-const cassandra = require('cassandra-driver');
+import client from '../utils/database.js';
+import cassandra from 'cassandra-driver';
 
 /**
- * ✅ Tạo phòng mới
+ * ✅ Lưu room nhận từ Kafka (chỉ nhận room_id từ user-service)
  */
-const createRoom = async (participants) => {
-  const roomId = cassandra.types.Uuid.random().toString();
+export const saveRoomFromEvent = async (roomId, participants = [], createdBy = null) => {
+  const uuid = cassandra.types.Uuid.fromString(roomId);
+  const createdAt = new Date();
   const name = `Room_${roomId.slice(0, 8)}`;
-  const createdBy = participants[0];
 
-  const query = `
+  // 1️⃣ Insert vào bảng rooms
+  const queryRoom = `
     INSERT INTO chatbox.rooms (room_id, name, participants, created_by, created_at)
     VALUES (?, ?, ?, ?, ?)
   `;
-  const params = [roomId, name, participants, createdBy, new Date()];
-  await client.execute(query, params, { prepare: true });
+  await client.execute(
+    queryRoom,
+    [
+      uuid,
+      name,
+      participants.map((u) => parseInt(u, 10)),
+      createdBy ? parseInt(createdBy, 10) : null,
+      createdAt,
+    ],
+    { prepare: true }
+  );
 
-  // Thêm từng participant vào bảng room_participants
+  // 2️⃣ Insert vào bảng quan hệ participants
   for (const userId of participants) {
-    const participantQuery = `
-      INSERT INTO chatbox.room_participants (room_id, user_id)
-      VALUES (?, ?)
-    `;
-    await client.execute(participantQuery, [roomId, userId], { prepare: true });
+    const intUserId = parseInt(userId, 10);
+
+    // room_participants
+    const q1 = `INSERT INTO chatbox.room_participants (user_id, room_id) VALUES (?, ?)`;
+    await client.execute(q1, [intUserId, uuid], { prepare: true });
+
+    // room_participants_by_user
+    const q2 = `INSERT INTO chatbox.room_participants_by_user (user_id, room_id) VALUES (?, ?)`;
+    await client.execute(q2, [intUserId, uuid], { prepare: true });
+
+    // room_participants_by_room
+    const q3 = `INSERT INTO chatbox.room_participants_by_room (room_id, user_id) VALUES (?, ?)`;
+    await client.execute(q3, [uuid, intUserId], { prepare: true });
   }
 
-  return { roomId, name, participants, createdBy, createdAt: new Date() };
+  console.log(`✅ Room ${roomId} inserted with ${participants.length} participants`);
 };
 
 /**
  * ✅ Lấy danh sách phòng của user
  */
-const getRooms = async (userId) => {
-  // B1: lấy danh sách room_id user tham gia
+export const getRooms = async (userId) => {
   const participantQuery = `
     SELECT room_id FROM chatbox.room_participants WHERE user_id = ?
   `;
-  const participantResult = await client.execute(participantQuery, [userId], { prepare: true });
+  const participantResult = await client.execute(
+    participantQuery,
+    [parseInt(userId, 10)],
+    { prepare: true }
+  );
 
-  if (participantResult.rows.length === 0) {
-    return [];
-  }
+  if (participantResult.rows.length === 0) return [];
 
-  const roomIds = participantResult.rows.map(r => r.room_id);
-
-  // B2: lấy thông tin từng room
+  const roomIds = participantResult.rows.map((r) => r.room_id);
   const rooms = [];
+
   for (const roomId of roomIds) {
     const query = `
       SELECT room_id, name, participants, created_by, created_at
@@ -55,11 +73,12 @@ const getRooms = async (userId) => {
     if (result.rows.length > 0) {
       const row = result.rows[0];
       rooms.push({
-        roomId: row.room_id,
+        roomId: row.room_id.toString(),
         name: row.name,
         participants: row.participants,
         createdBy: row.created_by,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
       });
     }
   }
@@ -68,15 +87,17 @@ const getRooms = async (userId) => {
 };
 
 /**
- * ✅ Kiểm tra quyền truy cập phòng
+ * ✅ Kiểm tra quyền truy cập phòng (tên export đồng bộ với các service khác)
  */
-const checkRoomAccess = async (roomId, userId) => {
+export const checkUserInRoom = async (roomId, userId) => {
   const query = `
     SELECT * FROM chatbox.room_participants
-    WHERE room_id = ? AND user_id = ?
+    WHERE user_id = ? AND room_id = ?
   `;
-  const result = await client.execute(query, [roomId, userId], { prepare: true });
+  const result = await client.execute(
+    query,
+    [parseInt(userId, 10), cassandra.types.Uuid.fromString(roomId)],
+    { prepare: true }
+  );
   return result.rows.length > 0;
 };
-
-module.exports = { createRoom, getRooms, checkRoomAccess };

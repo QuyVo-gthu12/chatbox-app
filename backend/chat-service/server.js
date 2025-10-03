@@ -1,11 +1,22 @@
-require('dotenv').config();
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const path = require('path');
-const setupChatRoutes = require('./routes/chat.routes');
-const chatHttpRoutes = require('./routes/chat.http.routes');
+import dotenv from 'dotenv';
+dotenv.config();
+
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+import { setupChatRoutes } from './routes/chat.routes.js';
+import chatHttpRoutes from './routes/chat.http.routes.js';
+import { startConsumer } from './kafka/consumer.js';
+import './utils/database.js'; // Kết nối Cassandra
+
+// 🔹 Fix __dirname cho ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Debug env
 console.log('⚙️ Loaded ENV:');
@@ -24,14 +35,14 @@ const io = new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'Uploads')));
+app.use('/uploads', express.static(join(__dirname, 'Uploads')));
 app.use('/chats', chatHttpRoutes); // HTTP routes
 
 // Khởi động WebSocket
 setupChatRoutes(io);
 
-// Kết nối Cassandra
-require('./utils/database');
+// ✅ Khởi động Kafka consumer song song
+startConsumer();
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {

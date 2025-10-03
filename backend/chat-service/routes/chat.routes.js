@@ -1,10 +1,11 @@
-const axios = require('axios');
-const { saveMessage, getMessages } = require('../models/message.model');
-const { addUserToRoom, checkUserInRoom } = require('../models/roomParticipants.model');
+import axios from 'axios';
+import { saveMessage, getMessages } from '../models/message.model.js';
+import { addUserToRoom, checkUserInRoom } from '../models/roomParticipants.model.js';
+import { v4 as uuidv4, validate as isUuid } from 'uuid';
 
 const USER_API_URL = process.env.USER_API_URL || 'http://localhost:3001';
 
-module.exports = (io) => {
+export const setupChatRoutes = (io) => {
   // Middleware xác thực token khi kết nối socket
   io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
@@ -29,15 +30,13 @@ module.exports = (io) => {
 
     // Join room
     socket.on('joinRoom', async (roomId) => {
-      if (!roomId || !roomId.startsWith('room_')) {
+      if (!roomId || !isUuid(roomId)) {
         console.error(`Invalid roomId: ${roomId}`);
-        socket.emit('error', { message: 'Invalid room ID' });
+        socket.emit('errorMessage', { message: 'Invalid room ID' });
         return;
       }
       try {
-        // ✅ Thêm user vào bảng room_participants
         await addUserToRoom(roomId, socket.user.user_id);
-
         const messages = await getMessages(roomId);
         socket.join(roomId);
 
@@ -45,7 +44,7 @@ module.exports = (io) => {
         socket.emit('roomJoined', { roomId, messages });
       } catch (error) {
         console.error('Error joining room:', error.message);
-        socket.emit('error', { message: 'Cannot join room' });
+        socket.emit('errorMessage', { message: 'Cannot join room' });
       }
     });
 
@@ -53,45 +52,37 @@ module.exports = (io) => {
     socket.on('sendMessage', async (data) => {
       try {
         const { roomId, content, type } = data;
-        if (!roomId || !roomId.startsWith('room_') || !content || !type) {
+        if (!roomId || !isUuid(roomId) || !content || !type) {
           console.error('Invalid message data:', data);
-          socket.emit('error', { message: 'Invalid message data' });
+          socket.emit('errorMessage', { message: 'Invalid message data' });
           return;
         }
 
-        // ✅ Kiểm tra quyền trong room_participants
         const hasAccess = await checkUserInRoom(roomId, socket.user.user_id);
         if (!hasAccess) {
           console.error(`Access denied for room: ${roomId}, user: ${socket.user.user_id}`);
-          socket.emit('error', { message: 'You do not have access to this room' });
+          socket.emit('errorMessage', { message: 'You do not have access to this room' });
           return;
         }
 
-        // Lưu tin nhắn
-        const message = await saveMessage(
-          roomId,
-          socket.user.user_id,
-          content,
-          type
-        );
+        const message = await saveMessage(roomId, socket.user.user_id, content, type);
 
-        // Phát lại tin nhắn tới tất cả client trong room
         io.to(roomId).emit('message', {
           ...message,
-          senderName: socket.user.name, // Thêm tên hiển thị
+          senderName: socket.user.name,
         });
 
         console.log(`✅ Message sent to room ${roomId}:`, message);
       } catch (error) {
         console.error('Error sending message:', error.message);
-        socket.emit('error', { message: 'Cannot send message' });
+        socket.emit('errorMessage', { message: 'Cannot send message' });
       }
     });
 
     // Trạng thái typing
     socket.on('typing', (data) => {
       const { roomId, isTyping } = data;
-      if (roomId && roomId.startsWith('room_')) {
+      if (roomId && isUuid(roomId)) {
         socket.to(roomId).emit('typing', {
           roomId,
           isTyping,

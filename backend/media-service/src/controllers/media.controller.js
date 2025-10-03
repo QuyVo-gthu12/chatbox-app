@@ -1,7 +1,21 @@
+// src/controllers/media.controller.js
 const { saveFileMeta, getFileMeta } = require('../services/media.service');
-const path = require('path');
 const fs = require('fs');
+const Minio = require('minio');
 
+// --- MinIO client ---
+const minioClient = new Minio.Client({
+  endPoint: 'minio', // Docker Compose service name
+  port: 9000,
+  useSSL: false,
+  accessKey: 'admin',
+  secretKey: 'admin123',
+});
+
+// Bucket name
+const BUCKET_NAME = 'media-files';
+
+// --- Upload file ---
 exports.uploadFile = async (req, res) => {
   try {
     console.log('Received upload request:', {
@@ -11,21 +25,37 @@ exports.uploadFile = async (req, res) => {
     });
 
     if (!req.file) {
-      console.log('No file provided in request');
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const fileMeta = await saveFileMeta(req.file);
+    const filePath = req.file.path;
+    const objectName = req.file.filename; // tên file trong MinIO
+
+    // Upload lên MinIO
+    await minioClient.fPutObject(BUCKET_NAME, objectName, filePath);
+
+    // Xóa file tạm
+    fs.unlinkSync(filePath);
+
+    // Lưu metadata vào DB
+    const fileMeta = await saveFileMeta({
+      filename: objectName,
+      originalname: req.file.originalname,
+      mimetype: req.file.mimetype,
+      size: req.file.size,
+      uploaderId: req.user?.id || null, // nếu có thông tin user
+      type: req.body.type || 'file',
+    });
     console.log('File meta saved:', fileMeta);
 
-    // Trả về URL trực tiếp để frontend hiển thị ảnh
-    const fileUrl = `${process.env.MEDIA_URL || 'http://localhost:3002'}/media/${fileMeta.filename}`;
+    // URL file
+    const fileUrl = `http://localhost:9000/${BUCKET_NAME}/${objectName}`;
 
     res.status(201).json({
       message: 'File uploaded successfully',
-      fileUrl,           // frontend sẽ dùng field này
+      fileUrl,
       filename: fileMeta.filename,
-      type: req.body.type || 'file', // type file hoặc image
+      type: fileMeta.type,
     });
   } catch (error) {
     console.error('❌ Upload error:', error);
@@ -33,19 +63,20 @@ exports.uploadFile = async (req, res) => {
   }
 };
 
+// --- Get file metadata hoặc download file ---
 exports.getFile = async (req, res) => {
   try {
     const { filename } = req.params;
-    const filePath = path.join(__dirname, '..', 'uploads', filename);
-    console.log('Attempting to serve file:', filePath);
 
-    if (!fs.existsSync(filePath)) {
-      console.log('File not found:', filePath);
+    // Lấy metadata từ DB
+    const fileMeta = await getFileMeta(filename);
+    if (!fileMeta) {
       return res.status(404).json({ message: 'File not found' });
     }
 
-    // Trả file trực tiếp
-    res.sendFile(filePath);
+    // Tùy chọn: trả URL trực tiếp
+    const fileUrl = `http://localhost:9000/${BUCKET_NAME}/${fileMeta.filename}`;
+    res.json({ fileUrl, metadata: fileMeta });
   } catch (error) {
     console.error('❌ Get file error:', error);
     res.status(404).json({ message: 'File not found', error: error.message });

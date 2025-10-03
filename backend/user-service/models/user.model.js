@@ -1,5 +1,6 @@
 const pool = require('../utils/database');
 const bcrypt = require('bcryptjs');
+const { v4: uuidv4 } = require('uuid');  // 👈 thêm uuid
 
 /**
  * Generate a 6-digit user ID (string).
@@ -46,7 +47,7 @@ const getUserById = async (userId) => {
 
 /**
  * Add friend connection between two users by their user_id (6 digits).
- * Always generates a consistent room_id (sorted order).
+ * Always generates a consistent room_id (UUID).
  */
 const addFriend = async (userId1, userId2) => {
   const user1 = await getUserById(userId1);
@@ -54,9 +55,9 @@ const addFriend = async (userId1, userId2) => {
 
   if (!user1 || !user2) return null;
 
-  // đảm bảo roomId luôn nhất quán
+  // đảm bảo roomId luôn nhất quán (sắp xếp theo id trong DB)
   const sorted = [user1.id, user2.id].sort((a, b) => a - b);
-  const roomId = `room_${sorted[0]}_${sorted[1]}`;
+  const roomId = uuidv4(); // 👈 generate room_id UUID tại Node
 
   const query = `
     INSERT INTO friends (user_id_1, user_id_2, room_id)
@@ -64,10 +65,18 @@ const addFriend = async (userId1, userId2) => {
     ON CONFLICT (user_id_1, user_id_2) DO NOTHING
     RETURNING room_id
   `;
-  const values = [sorted[0], sorted[1], roomId];
+  const values = [sorted[0].toString(), sorted[1].toString(), roomId];
   const result = await pool.query(query, values);
 
-  return result.rows[0]?.room_id || roomId;
+  if (result.rows.length > 0) {
+    return result.rows[0].room_id;
+  } else {
+    const existing = await pool.query(
+      `SELECT room_id FROM friends WHERE user_id_1 = $1 AND user_id_2 = $2`,
+      [sorted[0].toString(), sorted[1].toString()]
+    );
+    return existing.rows[0].room_id;
+  }
 };
 
 /**

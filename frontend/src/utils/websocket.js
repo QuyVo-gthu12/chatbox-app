@@ -81,7 +81,7 @@ export const disconnectWebSocket = () => {
 
 // Tham gia phòng chat
 export const joinRoom = (roomId) => {
-  if (!roomId || !roomId.startsWith('room_')) {
+  if (!roomId) {
     console.error('❌ Invalid roomId:', roomId);
     return Promise.reject(new Error('Invalid roomId'));
   }

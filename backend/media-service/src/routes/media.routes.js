@@ -5,22 +5,19 @@ const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
+const Minio = require('minio');
 
 // Import controller
-const { uploadFile, getFile } = require('../controllers/media.controller');
+const { getFile } = require('../controllers/media.controller');
 
-// Tạo thư mục uploads nếu chưa tồn tại
-const uploadDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+// --- Multer config (lưu tạm file trước khi upload lên MinIO) ---
+const tempDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(tempDir)) {
+  fs.mkdirSync(tempDir, { recursive: true });
 }
 
-// Cấu hình lưu trữ file với multer
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    console.log('Saving file to:', uploadDir);
-    cb(null, uploadDir);
-  },
+  destination: (req, file, cb) => cb(null, tempDir),
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + '-' + file.originalname);
@@ -29,17 +26,23 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// Middleware xác thực token
+// --- MinIO client ---
+const minioClient = new Minio.Client({
+  endPoint: 'minio', // service name trong Docker Compose
+  port: 9000,
+  useSSL: false,
+  accessKey: 'admin',
+  secretKey: 'admin123',
+});
+
+// --- Middleware xác thực token ---
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
-  if (!token) {
-    console.log('No token provided');
-    return res.status(401).json({ message: 'No token provided' });
-  }
+  if (!token) return res.status(401).json({ message: 'No token provided' });
+
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mySecretKey17130804!@');
     req.user = decoded;
-    console.log('Token verified:', decoded);
     next();
   } catch (error) {
     console.error('❌ Token verification error:', error);
@@ -47,10 +50,35 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-// Route upload file
-router.post('/upload', authMiddleware, upload.single('file'), uploadFile);
+// --- Route upload file lên MinIO ---
+router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ message: 'No file uploaded' });
 
-// Route lấy file theo tên
-router.get('/:filename', getFile);
+  try {
+    const bucketName = 'media-files';
+    const objectName = file.filename; // tên file trong MinIO
+    const filePath = file.path;
+
+    // Upload file lên MinIO
+    await minioClient.fPutObject(bucketName, objectName, filePath);
+
+    // Xóa file tạm
+    fs.unlinkSync(filePath);
+
+    // Trả về URL file
+    const fileUrl = `http://localhost:9000/${bucketName}/${objectName}`;
+    res.json({
+      message: 'Upload thành công',
+      fileUrl
+    });
+  } catch (err) {
+    console.error('❌ Upload error:', err);
+    res.status(500).json({ message: 'Upload failed', error: err.message });
+  }
+});
+
+// --- Route lấy file (proxy từ MinIO nếu muốn) ---
+router.get('/:filename', authMiddleware, getFile);
 
 module.exports = router;

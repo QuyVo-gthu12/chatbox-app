@@ -48,11 +48,15 @@ async function initTables() {
     `);
 
     await pool.query(`
+      CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    `);
+
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS friends (
         id SERIAL PRIMARY KEY,
         user_id_1 VARCHAR(6) NOT NULL,
         user_id_2 VARCHAR(6) NOT NULL,
-        room_id VARCHAR(50) UNIQUE NOT NULL,
+        room_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         CONSTRAINT unique_friendship UNIQUE(user_id_1, user_id_2)
       );

@@ -54,9 +54,12 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   // Kiểm tra roomId hợp lệ
   useEffect(() => {
-    if (!roomId || !roomId.startsWith("room_")) {
+    if (!roomId || !uuidRegex.test(roomId)) {
       console.error("Invalid roomId:", roomId);
       setError("Phòng không hợp lệ");
       navigate("/home");
@@ -72,7 +75,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     }
 
     const fetchMessages = async () => {
-      if (roomId?.startsWith("room_")) {
+      if (roomId && uuidRegex.test(roomId)) {
         try {
           console.log(`Fetching messages for room: ${roomId}`);
           const response = await getMessages(roomId);
@@ -117,7 +120,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     // Kết nối WebSocket và tham gia phòng
     connectWebSocket()
       .then(() => {
-        if (roomId?.startsWith("room_")) {
+        if (roomId && uuidRegex.test(roomId)) {
           return joinRoom(roomId);
         }
       })
@@ -181,7 +184,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     content: string,
     type: "text" | "image" | "file" | "sticker"
   ) => {
-    if (!roomId?.startsWith("room_")) {
+    if (!roomId || !uuidRegex.test(roomId)) {
       setError("Phòng không hợp lệ");
       return;
     }
@@ -203,7 +206,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
 
   // ✅ Gửi file/ảnh
   const handleSendFile = async (file: File, type: "image" | "file") => {
-    if (!roomId?.startsWith("room_")) return;
+    if (!roomId || !uuidRegex.test(roomId)) return;
 
     const formData = new FormData();
     formData.append("roomId", roomId);
@@ -247,7 +250,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
 
   // Emit typing
   const handleTyping = (typing: boolean) => {
-    if (roomId?.startsWith("room_")) {
+    if (roomId && uuidRegex.test(roomId)) {
       sendTyping(roomId, typing);
     }
   };

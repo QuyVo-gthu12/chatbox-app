@@ -1,14 +1,14 @@
-const client = require('../utils/database');
-const cassandra = require('cassandra-driver');
-const axios = require('axios');
-const FormData = require('form-data');
-const fs = require('fs');
+import client from '../utils/database.js';
+import cassandra from 'cassandra-driver';
+import axios from 'axios';
+import FormData from 'form-data';
+import fs from 'fs';
 
 /**
  * ✅ Lưu tin nhắn
  * Nếu type = image/file → upload qua media-service trước
  */
-const saveMessage = async (roomId, sender, content, type, filePath = null) => {
+export const saveMessage = async (roomId, sender, content, type, filePath = null) => {
   const id = cassandra.types.TimeUuid.now();
   const timestamp = new Date();
   let finalContent = content;
@@ -33,10 +33,12 @@ const saveMessage = async (roomId, sender, content, type, filePath = null) => {
   }
 
   const query = `
-    INSERT INTO chatbox.messages (room_id, timestamp, id, sender, content, type)
+    INSERT INTO chatbox.messages (room_id, timestamp, id, content, sender, type)
     VALUES (?, ?, ?, ?, ?, ?)
   `;
-  const params = [roomId, timestamp, id, sender, finalContent, type];
+
+  const roomUuid = cassandra.types.Uuid.fromString(roomId);
+  const params = [roomUuid, timestamp, id, finalContent, sender, type];
 
   try {
     console.log(`Saving message: room=${roomId}, sender=${sender}, type=${type}`);
@@ -60,13 +62,15 @@ const saveMessage = async (roomId, sender, content, type, filePath = null) => {
 /**
  * ✅ Lấy danh sách tin nhắn
  */
-const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
+export const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
   let query = `
-    SELECT id, room_id, sender, content, type, timestamp
+    SELECT id, room_id, content, sender, type, timestamp
     FROM chatbox.messages
     WHERE room_id = ?
   `;
-  const params = [roomId];
+
+  const roomUuid = cassandra.types.Uuid.fromString(roomId);
+  const params = [roomUuid];
 
   if (beforeTimestamp) {
     const parsedDate = beforeTimestamp instanceof Date
@@ -90,7 +94,7 @@ const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
 
     return result.rows.map(row => ({
       id: row.id.toString(),
-      roomId: row.room_id,
+      roomId: row.room_id.toString(),
       sender: row.sender,
       content: row.content,
       type: row.type,
@@ -105,9 +109,7 @@ const getMessages = async (roomId, limit = 50, beforeTimestamp = null) => {
 /**
  * ✅ Kiểm tra quyền truy cập phòng chat
  */
-const checkRoomAccess = async (roomId, userId) => {
+export const checkRoomAccess = async (roomId, userId) => {
   console.log(`checkRoomAccess: user=${userId}, room=${roomId}`);
   return true; // TODO: sau này check từ room_participants
 };
-
-module.exports = { saveMessage, getMessages, checkRoomAccess };

@@ -2,8 +2,20 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Kafka } = require('kafkajs');
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_key";
+
+const kafka = new Kafka({
+  clientId: 'user-service',
+  brokers: [process.env.KAFKA_BROKER || 'kafka:9092']
+});
+
+const producer = kafka.producer();
+
+(async () => {
+  await producer.connect();
+})();
 
 // Helper format dữ liệu user trả về client
 const formatUserResponse = (user) => ({
@@ -130,22 +142,22 @@ router.post('/friends/add', async (req, res) => {
   if (userId === friendUserId) {
     return res.status(400).json({ message: 'Không thể thêm chính mình làm bạn bè' });
   }
-  try {
-    const existing = await global.pool.query(
-      `SELECT * FROM friends 
-       WHERE (user_id_1 = $1 AND user_id_2 = $2) 
-          OR (user_id_1 = $2 AND user_id_2 = $1)`,
-      [userId, friendUserId]
-    );
-    if (existing.rows.length > 0) {
-      return res.status(400).json({ message: 'Đã là bạn bè' });
-    }
 
-    const roomId = `room_${Date.now()}`;
-    await global.pool.query(
-      'INSERT INTO friends (user_id_1, user_id_2, room_id, created_at) VALUES ($1, $2, $3, NOW())',
-      [userId, friendUserId, roomId]
-    );
+  try {
+    // gọi model -> luôn trả về roomId (UUID trong bảng friends)
+    const roomId = await userModel.addFriend(userId, friendUserId);
+
+    // publish event qua Kafka (chỉ gửi room_id)
+    await producer.send({
+      topic: 'friends-events',
+      messages: [
+        {
+          value: JSON.stringify({ room_id: roomId })
+        }
+      ]
+    });
+
+    console.log(`📤 Published room_id=${roomId} to Kafka`);
 
     res.status(200).json({ roomId });
   } catch (error) {
