@@ -18,6 +18,7 @@ export const saveMessage = async (roomId, sender, content, type, filePath = null
     try {
       const form = new FormData();
       form.append('file', fs.createReadStream(filePath));
+      form.append('uploader_id', sender);
 
       const response = await axios.post(
         'http://localhost:3002/media/upload',

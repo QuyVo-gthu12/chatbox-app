@@ -3,10 +3,12 @@ import { motion } from "framer-motion";
 
 interface MessageType {
   id: string;
-  sender: string;
+  sender: string | { user_id?: string; id?: string; _id?: string };
+  senderId?: string;  // ✅ Thêm cho consistent
   content: string;
   timestamp: string;
   type: "text" | "image" | "file" | "sticker";
+  self?: boolean;
 }
 
 interface MessageProps {
@@ -14,8 +16,7 @@ interface MessageProps {
 }
 
 const Message: React.FC<MessageProps> = ({ message }) => {
-  const user = JSON.parse(localStorage.getItem("user") || "{}");
-  const isOwnMessage = message.sender === user.user_id;
+  const isOwnMessage = message.self || false;  // ✅ Giữ nguyên, giờ self đúng
 
   return (
     <motion.div
@@ -31,30 +32,33 @@ const Message: React.FC<MessageProps> = ({ message }) => {
             : "bg-gray-200 dark:bg-[#374151] text-gray-900 dark:text-white rounded-bl-none"
         }`}
       >
-        {/* Text message */}
+        {/* 💬 Text message */}
         {message.type === "text" && (
           <p className="whitespace-pre-wrap">{message.content}</p>
         )}
 
-        {/* Sticker */}
+        {/* 🧩 Sticker */}
         {message.type === "sticker" && (
           <span className="text-3xl" role="img" aria-label="sticker">
             {message.content}
           </span>
         )}
 
-        {/* Image message */}
+        {/* 🖼️ Image message */}
         {message.type === "image" && (
           <a href={message.content} target="_blank" rel="noopener noreferrer">
             <img
               src={message.content}
               alt="Shared"
               className="max-w-full max-h-60 rounded-lg border border-gray-300 dark:border-gray-600 hover:opacity-90 transition"
+              onError={(e) => {
+                e.currentTarget.src = "/image-error.png";
+              }}
             />
           </a>
         )}
 
-        {/* File message */}
+        {/* 📎 File message */}
         {message.type === "file" && (
           <a
             href={message.content}
@@ -75,8 +79,10 @@ const Message: React.FC<MessageProps> = ({ message }) => {
           </a>
         )}
 
-        {/* Timestamp */}
-        <p className="text-xs text-gray-400 mt-1 text-right">{message.timestamp}</p>
+        {/* 🕒 Timestamp */}
+        <p className="text-xs text-gray-400 mt-1 text-right">
+          {message.timestamp}
+        </p>
       </div>
     </motion.div>
   );

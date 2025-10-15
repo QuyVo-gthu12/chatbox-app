@@ -56,7 +56,7 @@ const addFriend = async (userId1, userId2) => {
   if (!user1 || !user2) return null;
 
   // đảm bảo roomId luôn nhất quán (sắp xếp theo id trong DB)
-  const sorted = [user1.id, user2.id].sort((a, b) => a - b);
+  const sorted = [user1.user_id, user2.user_id].sort((a, b) => a - b);
   const roomId = uuidv4(); // 👈 generate room_id UUID tại Node
 
   const query = `
@@ -97,7 +97,7 @@ const getFriends = async (userId) => {
     JOIN users u ON u.id = f.user_id_1
     WHERE f.user_id_2 = $1
   `;
-  const result = await pool.query(query, [user.id]);
+  const result = await pool.query(query, [user.user_id]);
   return result.rows;
 };
 

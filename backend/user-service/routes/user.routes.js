@@ -3,6 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { Kafka } = require('kafkajs');
+const userModel = require('../models/user.model');
+
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev_secret_key";
 
@@ -136,35 +138,39 @@ router.post('/login', async (req, res) => {
 // ---------------- ADD FRIEND ----------------
 router.post('/friends/add', async (req, res) => {
   const { userId, friendUserId } = req.body;
+
   if (!userId || !friendUserId) {
     return res.status(400).json({ message: 'Thiếu user_id hoặc friend_user_id' });
   }
+
   if (userId === friendUserId) {
     return res.status(400).json({ message: 'Không thể thêm chính mình làm bạn bè' });
   }
 
   try {
-    // gọi model -> luôn trả về roomId (UUID trong bảng friends)
+    // 1️⃣ Thêm bạn vào bảng friends, trả về roomId (UUID)
     const roomId = await userModel.addFriend(userId, friendUserId);
 
-    // publish event qua Kafka (chỉ gửi room_id)
-    await producer.send({
-      topic: 'friends-events',
-      messages: [
-        {
-          value: JSON.stringify({ room_id: roomId })
-        }
-      ]
+    // 2️⃣ Lấy danh sách participants
+    const participants = [userId, friendUserId];
+
+    // 3️⃣ Publish event đầy đủ sang Kafka
+    const { publishRoomEvent } = require('../kafka/producer');
+    await publishRoomEvent(roomId, participants, userId);
+
+    console.log(`📤 Published FRIEND_ADDED event: roomId=${roomId}, participants=${participants}`);
+
+    // 4️⃣ Trả về roomId và participants cho frontend
+    res.status(200).json({
+      roomId,
+      participants
     });
-
-    console.log(`📤 Published room_id=${roomId} to Kafka`);
-
-    res.status(200).json({ roomId });
   } catch (error) {
     console.error('❌ Error adding friend:', error.message);
     res.status(500).json({ message: 'Lỗi thêm bạn bè' });
   }
 });
+
 
 // ---------------- GET FRIENDS ----------------
 router.get('/friends/:userId', async (req, res) => {

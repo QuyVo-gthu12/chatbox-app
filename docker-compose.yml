@@ -1,7 +1,9 @@
 version: '3.9'
 
 services:
-  # ===== Backend services =====
+  # ======================
+  # 🧠 USER SERVICE
+  # ======================
   user-service:
     build: ./backend/user-service
     container_name: chatbox-app-user-service
@@ -16,7 +18,12 @@ services:
     working_dir: /usr/src/app
     volumes:
       - ./backend/user-service:/usr/src/app
+    networks:
+      - chatbox-network
 
+  # ======================
+  # 💬 CHAT SERVICE
+  # ======================
   chat-service:
     build: ./backend/chat-service
     container_name: chatbox-app-chat-service
@@ -26,30 +33,48 @@ services:
       - cassandra
       - user-service
       - kafka
+      - redis
     ports:
       - "3000:3000"
     working_dir: /usr/src/app
     volumes:
       - ./backend/chat-service:/usr/src/app
-    command: ["sh", "wait-for-cassandra.sh", "node", "server.js"]
+    command: ["sh", "wait-for-cassandra.sh", "sh", "wait-for-kafka.sh", "node", "server.js"]
+    environment:
+      REDIS_URL: redis://redis:6379
+    networks:
+      - chatbox-network
+    # 👉 Cho phép scale nhiều instance realtime
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
 
-  # media-service:
-  #   build: ./backend/media-service
-  #   container_name: chatbox-app-media-service
-  #   env_file:
-  #     - ./backend/media-service/.env
-  #   depends_on:
-  #     - minio
-  #     - kafka
-  #   ports:
-  #     - "3002:3002"
-  #   working_dir: /usr/src/app
-  #   volumes:
-  #     - ./backend/media-service:/usr/src/app
-  #     - ./backend/media-service/uploads:/usr/src/app/uploads
-  #   command: ["node", "server.js"]
+  # ======================
+  # 📸 MEDIA SERVICE
+  # ======================
+  media-service:
+    build: ./backend/media-service
+    container_name: chatbox-app-media-service
+    env_file:
+      - ./backend/media-service/.env
+    depends_on:
+      - minio
+      - kafka
+      - cassandra
+    ports:
+      - "3002:3002"
+    working_dir: /usr/src/app
+    volumes:
+      - ./backend/media-service:/usr/src/app
+      - ./backend/media-service/uploads:/usr/src/app/uploads
+    command: ["node", "src/server.js"]
+    networks:
+      - chatbox-network
 
-  # ===== Databases =====
+  # ======================
+  # 🗄️ POSTGRESQL
+  # ======================
   db:
     image: postgres:16-alpine
     container_name: user-db
@@ -59,7 +84,12 @@ services:
       - user-db-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    networks:
+      - chatbox-network
 
+  # ======================
+  # 🧩 CASSANDRA
+  # ======================
   cassandra:
     image: cassandra:4.1
     container_name: cassandra-db
@@ -67,21 +97,30 @@ services:
       - "9042:9042"
     volumes:
       - cassandra-data:/var/lib/cassandra
+    networks:
+      - chatbox-network
 
-  # minio:
-  #   image: minio/minio:latest
-  #   container_name: minio
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   environment:
-  #     MINIO_ROOT_USER: admin
-  #     MINIO_ROOT_PASSWORD: admin123
-  #   command: server /data --console-address ":9001"
-  #   volumes:
-  #     - minio-data:/data
+  # ======================
+  # 📦 MINIO (Storage)
+  # ======================
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - chatbox-network
 
-  # ===== Kafka + Zookeeper =====
+  # ======================
+  # 🐘 ZOOKEEPER
+  # ======================
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
@@ -90,7 +129,12 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     ports:
       - "2181:2181"
+    networks:
+      - chatbox-network
 
+  # ======================
+  # ⚙️ KAFKA
+  # ======================
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
@@ -102,11 +146,36 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - chatbox-network
 
+  # ======================
+  # 🔴 REDIS (Socket.IO Adapter)
+  # ======================
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - chatbox-network
+
+# ======================
+# 📂 VOLUMES
+# ======================
 volumes:
   user-db-data:
   cassandra-data:
   minio-data:
+
+# ======================
+# 🌐 NETWORK
+# ======================
+networks:
+  chatbox-network:
+    driver: bridge

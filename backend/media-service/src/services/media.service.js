@@ -1,16 +1,14 @@
 // src/services/media.service.js
-const { Pool } = require('pg');
+const cassandra = require('cassandra-driver');
 
-// --- Kết nối PostgreSQL (dùng DB user-service) ---
-const pool = new Pool({
-  host: process.env.DB_HOST || 'db',
-  port: process.env.DB_PORT || 5432,
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'chatbox',
+// --- Kết nối Cassandra ---
+const client = new cassandra.Client({
+  contactPoints: [process.env.CASSANDRA_HOST || 'cassandra'],
+  localDataCenter: process.env.CASSANDRA_DC || 'datacenter1',
+  keyspace: process.env.CASSANDRA_KEYSPACE || 'chatbox',
 });
 
-// --- Lưu metadata file vào PostgreSQL ---
+// --- Lưu metadata file vào Cassandra ---
 const saveFileMeta = async (file) => {
   try {
     if (!file || !file.filename || !file.originalname) {
@@ -20,11 +18,13 @@ const saveFileMeta = async (file) => {
     const uploadedAt = new Date();
 
     const query = `
-      INSERT INTO media_files(filename, original_name, mimetype, size, uploader_id, type, uploaded_at)
-      VALUES($1, $2, $3, $4, $5, $6, $7)
-      RETURNING *
+      INSERT INTO media_files (
+        id, filename, original_name, mimetype, size, uploader_id, type, uploaded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const values = [
+
+    const params = [
+      cassandra.types.Uuid.random(),
       file.filename,
       file.originalname,
       file.mimetype,
@@ -34,26 +34,29 @@ const saveFileMeta = async (file) => {
       uploadedAt
     ];
 
-    const result = await pool.query(query, values);
-    return result.rows[0];
+    await client.execute(query, params, { prepare: true });
+
+    return {
+      filename: file.filename,
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      type: file.type,
+      uploadedAt
+    };
   } catch (error) {
     console.error('❌ Error in saveFileMeta:', error);
     throw error;
   }
 };
 
-// --- Lấy metadata file từ PostgreSQL ---
+// --- Lấy metadata file từ Cassandra ---
 const getFileMeta = async (filename) => {
   try {
-    if (!filename) throw new Error('Filename is required');
+    const query = `SELECT * FROM media_files WHERE filename = ? LIMIT 1`;
+    const result = await client.execute(query, [filename], { prepare: true });
 
-    const query = 'SELECT * FROM media_files WHERE filename = $1';
-    const result = await pool.query(query, [filename]);
-
-    if (result.rows.length === 0) {
-      return null;
-    }
-
+    if (result.rowLength === 0) return null;
     return result.rows[0];
   } catch (error) {
     console.error('❌ Error in getFileMeta:', error);

@@ -55,7 +55,7 @@ export const connectWebSocket = () => {
     socket.on('reconnect', (attempt) => {
       console.log(`🔄 WebSocket reconnected after ${attempt} attempts`);
       const currentRoom = localStorage.getItem('currentRoom');
-      if (currentRoom && currentRoom.startsWith('room_')) {
+      if (currentRoom) {
         socket.emit('joinRoom', currentRoom);
       }
     });

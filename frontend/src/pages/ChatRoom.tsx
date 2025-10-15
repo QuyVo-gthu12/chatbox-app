@@ -16,12 +16,14 @@ import MessageInput from "../components/chat/MessageInput";
 
 interface MessageType {
   id: string;
-  sender: string;
+  sender?: string;  // ✅ Thêm optional cho sender (fallback senderId)
+  senderId?: string;  // ✅ Thêm senderId để match server payload
   senderName?: string;
   content: string;
   timestamp: string;
   type: "text" | "image" | "file" | "sticker";
   roomId?: string;
+  self?: boolean;
 }
 
 interface TypingEvent {
@@ -78,21 +80,46 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       if (roomId && uuidRegex.test(roomId)) {
         try {
           console.log(`Fetching messages for room: ${roomId}`);
+          console.log("Current user.user_id:", user.user_id);  // ✅ Debug: Log user_id
           const response = await getMessages(roomId);
+          
+          // ✅ Debug: Log một message sample để check structure
+          if (response.data.messages.length > 0) {
+            console.log("Sample message structure:", response.data.messages[0]);
+          }
+
           setMessages(
             response.data.messages
-              .map((msg: any) => ({
-                id: msg.id,
-                sender: msg.sender,
-                senderName: msg.senderName || msg.sender,
-                content: msg.content,
-                timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-                type: msg.type,
-                roomId,
-              }))
+              .map((msg: any) => {
+                // ✅ Fix: Ưu tiên sender_id (từ DB), fallback sender
+                let sender = msg.sender_id || 
+                             (typeof msg.sender === "object" 
+                               ? msg.sender.user_id || msg.sender.id || msg.sender._id 
+                               : msg.sender) ||
+                             msg.senderId;  // Fallback thêm senderId nếu API có
+
+                // ✅ Ensure sender is string và lowercase cho so sánh an toàn (UUID case-insensitive)
+                sender = sender ? sender.toString().toLowerCase() : null;
+                const currentUserId = user.user_id ? user.user_id.toString().toLowerCase() : null;
+
+                // ✅ Debug: Log cho mỗi message (comment out sau khi fix)
+                console.log(`Message ID ${msg.id}: sender = "${sender}", currentUserId = "${currentUserId}", self = ${sender === currentUserId}`);
+
+                return {
+                  id: msg.id,
+                  sender,  // ✅ Set sender as normalized string
+                  senderId: sender,  // ✅ Duplicate cho consistent với server
+                  senderName: msg.senderName || (msg.sender ? msg.sender.name : 'Unknown'),
+                  content: msg.content,
+                  timestamp: new Date(msg.timestamp).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                  type: msg.type,
+                  roomId,
+                  self: sender === currentUserId,  // ✅ Fix: So sánh normalized, giờ chính xác hơn
+                };
+              })
               .reverse()
           );
           setError(null);
@@ -146,12 +173,51 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     onMessage((data: MessageType) => {
       if (data.roomId === roomId) {
         setMessages((prev) => {
+          // ✅ Fix duplicate: Kiểm tra nếu ID trùng thì skip
           if (prev.some((msg) => msg.id === data.id)) return prev;
+
+          // ✅ Fix duplicate optimistic: Nếu là tin của mình và match content/type/temp ID, replace
+          const senderId = (data.sender || data.senderId || '').toString().toLowerCase();
+          const currentUserId = user.user_id.toString().toLowerCase();
+          const isOwnMessage = senderId === currentUserId;
+
+          if (isOwnMessage && prev.length > 0) {
+            const lastMessage = prev[prev.length - 1];
+            const isOptimisticMatch = lastMessage.self &&
+              lastMessage.content === data.content &&
+              lastMessage.type === data.type &&
+              !uuidRegex.test(lastMessage.id);  // Temp ID không phải UUID
+
+            if (isOptimisticMatch) {
+              // Replace optimistic với real data
+              const updatedMessages = [...prev];
+              updatedMessages[updatedMessages.length - 1] = {
+                ...data,
+                sender: data.sender || data.senderId,
+                senderId: senderId,
+                senderName: data.senderName || user.name,
+                self: true,  // Giữ self=true cho own
+                timestamp: new Date(data.timestamp).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+              };
+              return updatedMessages;
+            }
+          }
+
+          // ✅ Nếu không match, thêm mới (cho tin từ người khác)
+          const computedSelf = data.self !== undefined 
+            ? data.self 
+            : isOwnMessage;
           return [
             ...prev,
             {
               ...data,
+              sender: data.sender || data.senderId,  // ✅ Normalize sender
+              senderId: senderId,  // ✅ Consistent
               senderName: data.senderName || data.sender,
+              self: computedSelf,  // ✅ Set self đúng
               timestamp: new Date(data.timestamp).toLocaleTimeString([], {
                 hour: "2-digit",
                 minute: "2-digit",
@@ -179,7 +245,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Gửi tin nhắn text/sticker
+  // Gửi tin nhắn text/sticker (giữ nguyên từ sửa trước)
   const handleSendMessage = (
     content: string,
     type: "text" | "image" | "file" | "sticker"
@@ -189,9 +255,12 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       return;
     }
 
-    const newMessage: MessageType = {
-      id: Date.now().toString(),
+    // ✅ Optional: Optimistic update (thêm ngay với self=true, server sẽ confirm)
+    const tempId = Date.now().toString();
+    const optimisticMessage: MessageType = {
+      id: tempId,
       sender: user.user_id,
+      senderId: user.user_id,
       senderName: user.name,
       content,
       timestamp: new Date().toLocaleTimeString([], {
@@ -200,13 +269,44 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       }),
       type,
       roomId,
+      self: true,  // ✅ Set self=true cho optimistic
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);  // Thêm tạm
+
+    const newMessage: MessageType = {
+      id: tempId,  // Temp ID, server sẽ override
+      sender: user.user_id,
+      senderId: user.user_id,
+      senderName: user.name,
+      content,
+      timestamp: new Date().toISOString(),  // Gửi ISO cho server
+      type,
+      roomId,
     };
     sendMessage(newMessage);
   };
 
-  // ✅ Gửi file/ảnh
+  // ✅ Gửi file/ảnh (tương tự, thêm optimistic)
   const handleSendFile = async (file: File, type: "image" | "file") => {
     if (!roomId || !uuidRegex.test(roomId)) return;
+
+    // ✅ Optimistic cho file (hiển thị placeholder để match content sau upload)
+    const tempId = Date.now().toString();
+    const optimisticMessage: MessageType = {
+      id: tempId,
+      sender: user.user_id,
+      senderId: user.user_id,
+      senderName: user.name,
+      content: `${type === "image" ? "🖼️" : "📎"} Đang tải lên...`,  // Placeholder text để match
+      timestamp: new Date().toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      type,
+      roomId,
+      self: true,
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);
 
     const formData = new FormData();
     formData.append("roomId", roomId);
@@ -227,24 +327,31 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ chats }) => {
       const data = await res.json();
       console.log("Uploaded file:", data);
 
+      // ✅ Update content optimistic với real URL trước khi send (để match replace)
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId ? { ...msg, content: data.fileUrl } : msg
+        )
+      );
+
+      // ✅ Gửi message với URL thật (server sẽ emit lại, frontend sẽ update qua onMessage)
       const newMessage: MessageType = {
-        id: Date.now().toString(),
+        id: tempId,
         sender: user.user_id,
+        senderId: user.user_id,
         senderName: user.name,
-        content: data.fileUrl, // link ảnh/file
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
+        content: data.fileUrl,  // link ảnh/file
+        timestamp: new Date().toISOString(),
         type,
         roomId,
-    };
-
-    sendMessage(newMessage);
+      };
+      sendMessage(newMessage);
 
     } catch (err) {
       console.error("Upload error:", err);
       setError("Không thể gửi file");
+      // ✅ Remove optimistic nếu fail
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     }
   };
 

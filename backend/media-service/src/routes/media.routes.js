@@ -6,15 +6,13 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 const Minio = require('minio');
-
-// Import controller
+const cassandraClient = require('../config/cassandra');
+const { v4: uuidv4 } = require('uuid');
 const { getFile } = require('../controllers/media.controller');
 
-// --- Multer config (lưu tạm file trước khi upload lên MinIO) ---
+// --- Multer config ---
 const tempDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, tempDir),
@@ -23,16 +21,15 @@ const storage = multer.diskStorage({
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
 });
-
 const upload = multer({ storage });
 
 // --- MinIO client ---
 const minioClient = new Minio.Client({
-  endPoint: 'minio', // service name trong Docker Compose
-  port: 9000,
-  useSSL: false,
-  accessKey: 'admin',
-  secretKey: 'admin123',
+  endPoint: process.env.MINIO_ENDPOINT || 'minio',
+  port: parseInt(process.env.MINIO_PORT || 9000),
+  useSSL: process.env.MINIO_USE_SSL === 'true',
+  accessKey: process.env.MINIO_ACCESS_KEY || 'minioadmin',
+  secretKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
 });
 
 // --- Middleware xác thực token ---
@@ -50,27 +47,40 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
-// --- Route upload file lên MinIO ---
+// --- Upload file ---
 router.post('/upload', authMiddleware, upload.single('file'), async (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ message: 'No file uploaded' });
 
   try {
-    const bucketName = 'media-files';
-    const objectName = file.filename; // tên file trong MinIO
+    const bucketName = process.env.MINIO_BUCKET_NAME || 'media';
+    const objectName = file.filename;
     const filePath = file.path;
 
-    // Upload file lên MinIO
-    await minioClient.fPutObject(bucketName, objectName, filePath);
+    const bucketExists = await minioClient.bucketExists(bucketName).catch(() => false);
+    if (!bucketExists) await minioClient.makeBucket(bucketName, 'us-east-1');
 
-    // Xóa file tạm
+    await minioClient.fPutObject(bucketName, objectName, filePath);
     fs.unlinkSync(filePath);
 
-    // Trả về URL file
     const fileUrl = `http://localhost:9000/${bucketName}/${objectName}`;
+
+    // 👇 Lấy uploader_id từ body hoặc token
+    const uploaderId = req.body.uploader_id || req.user?.id || null;
+
+    await cassandraClient.execute(
+      `INSERT INTO media_files (id, filename, file_url, uploader_id, uploaded_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [uuidv4(), file.originalname, fileUrl, uploaderId, new Date()],
+      { prepare: true }
+    );
+
     res.json({
-      message: 'Upload thành công',
-      fileUrl
+      message: '✅ Upload thành công',
+      fileUrl,
+      filename: file.originalname,
+      uploader: uploaderId,
+      size: file.size
     });
   } catch (err) {
     console.error('❌ Upload error:', err);
@@ -78,7 +88,8 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
   }
 });
 
-// --- Route lấy file (proxy từ MinIO nếu muốn) ---
+
+// --- Lấy file ---
 router.get('/:filename', authMiddleware, getFile);
 
 module.exports = router;

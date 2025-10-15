@@ -1,5 +1,8 @@
 FROM node:18
 
+# ✅ Cài netcat để wait-for-cassandra.sh có thể dùng nc
+RUN apt-get update && apt-get install -y netcat-openbsd
+
 WORKDIR /usr/src/app
 
 COPY package*.json ./
