@@ -1,0 +1,2 @@
+2025/10/15 10:03:11 [error] 27#27: *9 connect() failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: , request: "GET /api/chat/health HTTP/1.1", upstream: "http://172.19.0.10:3000/health", host: "localhost"
+2025/10/15 10:05:14 [error] 28#28: *11 connect() failed (111: Connection refused) while connecting to upstream, client: 172.19.0.1, server: , request: "GET /api/chat/health HTTP/1.1", upstream: "http://172.19.0.10:3000/health", host: "localhost"

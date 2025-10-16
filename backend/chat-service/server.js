@@ -67,6 +67,15 @@ await Promise.all([pubClient.connect(), subClient.connect()])
 // ================================
 app.use(cors());
 app.use(express.json());
+
+// ================================
+// 🔹 Health check route
+// ================================
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', service: 'chat-service' });
+});
+
+
 app.use('/uploads', express.static(join(__dirname, 'Uploads')));
 app.use('/chats', createChatHttpRoutes(io));
 

@@ -73,6 +73,16 @@ async function startServer() {
   try {
     await waitForDB();      // Chờ DB
     await initTables();     // Tạo bảng nếu chưa có
+    
+// ----------------- Health check -----------------
+    app.get('/', (req, res) => {
+      res.send('User Service is running');
+    });
+
+    app.get('/health', (req, res) => {
+      res.json({ status: 'ok', service: 'user-service' });
+    });
+
 
     // Import routes sau khi DB sẵn sàng
     const usersRouter = require('./routes/user.routes');
